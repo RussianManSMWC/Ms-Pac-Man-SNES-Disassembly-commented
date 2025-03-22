@@ -5,7 +5,7 @@
 macro MSPMBank80Macros(StartBank, EndBank)
 %BANK_START(<StartBank>)
 
-CODE_808000:
+RESET_808000:
 	CLC
 	XCE
 	SEP.b #$30
@@ -102,18 +102,20 @@ CODE_808000:
 	STZ.w !REGISTER_VCountTimerHi
 	STZ.w !REGISTER_DMAEnable
 	STZ.w !REGISTER_HDMAEnable
-	STZ.w !REGISTER_EnableFastROM
+	STZ.w !REGISTER_EnableFastROM                   ;disable fastROM
 	LDA.b #$01
-	STA.w !REGISTER_EnableFastROM
+	STA.w !REGISTER_EnableFastROM                   ;then enable it. very cool.
 	REP.b #$30
 	JML.l CODE_8081F5
 
-CODE_808118:
+;IRQ (unused)
+IRQ_808118:
 	SEP.b #$20
-	CMP.l !REGISTER_IRQEnable
+	CMP.l !REGISTER_IRQEnable                       ;i don't know what that would've accomplished, looks unfinished
 	RTI
 
-CODE_80811F:
+;NMI
+NMI_80811F:
 	PHP
 	REP.b #$30
 	JML.l CODE_808126
@@ -126,27 +128,36 @@ CODE_808126:
 	PHX
 	LDA.b #$01
 	STA.w $1F00
-	LDA.b #$80
-	STA.w !REGISTER_ScreenDisplayRegister
+            
+	LDA.b #!ScreenDisplayRegister_SetForceBlank
+	STA.w !REGISTER_ScreenDisplayRegister           ;note: no actual brightness, at least not yet
 	REP.b #$30
+            
 	INC.w $0200
+            
 	JSR.w CODE_808B36
+
 	SEP.b #$20
-	LDA.w $0210
+	LDA.w !RAM_MSPM_Global_Layer1YPosLo
 	STA.w !REGISTER_BG1VertScrollOffset
-	LDA.w $0211
+            
+	LDA.w !RAM_MSPM_Global_Layer1YPosHi
 	STA.w !REGISTER_BG1VertScrollOffset
 	REP.b #$20
-	JSR.w CODE_80CDD2
+
+	JSR.w CODE_80CDD2                               ;write from buffer
 	JSR.w CODE_808EFB
 	JSR.w CODE_809037
 	JSR.w CODE_808176
+            
 	LDA.w !REGISTER_Joypad1Lo
 	STA.w $026C
+
 	LDA.w !REGISTER_Joypad2Lo
 	STA.w $026E
+
 	SEP.b #$20
-	LDA.b #$0F
+	LDA.b #!ScreenDisplayRegister_MaxBrightness0F   ;always max bright ness
 	STA.w !REGISTER_ScreenDisplayRegister
 	REP.b #$20
 	PLX
@@ -155,6 +166,7 @@ CODE_808126:
 	PLP
 	RTI
 
+;palette animations (power pellet and beating level)
 CODE_808176:
 	REP.b #$30
 	LDA.w $0312
@@ -198,7 +210,7 @@ CODE_8081B5:
 	LDA.b #$02
 	STA.w !REGISTER_CGRAMAddress
 	LDY.w #$0002
-	LDA.b #$00
+	LDA.b #$00                                      ;black color
 CODE_8081D3:
 	STA.w !REGISTER_WriteToCGRAMPort
 	INY
@@ -212,7 +224,7 @@ CODE_8081DE:
 	STA.w !REGISTER_CGRAMAddress
 	LDY.w #$0002
 CODE_8081E8:
-	LDA.w $035C,y
+	LDA.w $035C,y                                   ;restore palette for blinking animation
 	STA.w !REGISTER_WriteToCGRAMPort
 	INY
 	CPY.w #$000C
@@ -307,6 +319,7 @@ CODE_8082B9:
 CODE_8082BE:
 	CMP.w $0200
 	BEQ.b CODE_8082BE
+
 	STZ.w $03AE
 	RTS
 
@@ -397,7 +410,7 @@ CODE_80835D:
 	LDA.w $031A
 	BEQ.b CODE_808368
 	JSR.w CODE_8095AA
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_808368:
 	JSR.w CODE_809EB1
@@ -416,8 +429,9 @@ CODE_808368:
 	LDA.w #CODE_8097B2
 	STA.w $020E
 CODE_808393:
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
+;paused state
 CODE_808396:
 	JSR.w CODE_80A85D
 	STA.w $0020
@@ -448,24 +462,26 @@ CODE_8083B6:
 CODE_8083D0:
 	STZ.w $0024
 	LDA.w $0020
-	BIT.w #$0800
+	BIT.w #!Joypad_DPadU                            ;check if holding up on D-pad
 	BEQ.b CODE_8083E3
-	LDA.w #$0000
-	STA.w $0210
+            
+	LDA.w #$0000                                    ;camera goes all the way up to show what's up there
+	STA.w !RAM_MSPM_Global_Layer1YPosLo
 	BRA.b CODE_8083F6
 
 CODE_8083E3:
-	BIT.w #$0400
+	BIT.w #!Joypad_DPadD                            ;check if holding down on D-pad
 	BEQ.b CODE_8083F0
-	LDA.w $0214
-	STA.w $0210
+
+	LDA.w $0214                                     ;lowest point of the maze
+	STA.w !RAM_MSPM_Global_Layer1YPosLo
 	BRA.b CODE_8083F6
 
 CODE_8083F0:
-	LDA.w $0212
-	STA.w $0210
+	LDA.w $0212                                     ;otherwise return back to the y-pos where we left off
+	STA.w !RAM_MSPM_Global_Layer1YPosLo
 CODE_8083F6:
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7                             ;can be replaced with RTS
 
 CODE_8083F9:
 	LDA.w $029C
@@ -475,7 +491,7 @@ CODE_8083F9:
 	BEQ.b CODE_80840D
 	DEC
 	STA.w $031C
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_80840D:
 	LDA.w #$0001
@@ -509,7 +525,7 @@ CODE_80844D:
 	STZ.w $029A
 	LDA.w #$001E
 	STA.w $0202
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_808462:
 	CMP.w #$0002
@@ -519,7 +535,7 @@ CODE_808462:
 	DEC
 	STA.w $0202
 	BEQ.b CODE_808475
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_808475:
 	LDA.w #$0014
@@ -549,14 +565,14 @@ CODE_8084A1:
 	STA.w $029A
 	CMP.w #$004C
 	BEQ.b CODE_8084B0
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8084B0:
 	LDA.w #$0003
 	STA.w $029C
 	LDA.w #$001E
 	STA.w $0202
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8084BF:
 	CMP.w #$0003
@@ -565,12 +581,12 @@ CODE_8084BF:
 	BEQ.b CODE_8084D0
 	DEC
 	STA.w $0202
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8084D0:
 	LDA.w #$0004
 	STA.w $029C
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8084D9:
 	CMP.w #$0004
@@ -583,7 +599,7 @@ CODE_8084E1:
 	BEQ.b CODE_8084F0
 	DEC
 	STA.w $0210
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8084F0:
 	LDA.w $036C
@@ -629,7 +645,7 @@ CODE_80853F:
 	STZ.w $0422
 CODE_80854A:
 	JSR.w CODE_808941
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_808550:
 	DEC.w $028C
@@ -639,7 +655,7 @@ CODE_808550:
 	BNE.b CODE_808567
 	LDA.w #$0005
 	STA.w $029C
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_808567:
 	JMP.w CODE_8085B0
@@ -650,7 +666,7 @@ CODE_80856A:
 	DEC
 	STA.w $0400
 	BEQ.b CODE_808578
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_808578:
 	JSR.w CODE_808900
@@ -692,7 +708,7 @@ CODE_8085B0:
 	LDA.w #$0004
 	JSR.w CODE_80961E
 CODE_8085D4:
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 DATA_8085D7:
 	dw $0004,$000E,$4004,$800E
@@ -708,7 +724,7 @@ CODE_8085E7:
 	DEC
 	STA.w $020C
 	BEQ.b CODE_8085FB
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8085FB:
 	LDA.w !RAM_MSPM_Global_CurrentLevelLo
@@ -768,7 +784,7 @@ CODE_808669:
 	BEQ.b CODE_808683
 	DEC
 	STA.w $0202
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_808683:
 	LDA.w #$0001
@@ -792,7 +808,7 @@ CODE_8086A3:
 	STA.w $0316
 	INC
 	STA.w $0318
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8086BF:
 	LDA.w $0208
@@ -806,21 +822,21 @@ CODE_8086BF:
 	CMP.w #$0000
 	BEQ.b CODE_8086DF
 	DEC.w $0210
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8086DF:
 	LDA.w #$00B4
 	STA.w $0202
 	LDA.w #$0003
 	STA.w $0234
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8086EE:
 	LDA.w $0202
 	BEQ.b CODE_8086FA
 	DEC
 	STA.w $0202
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8086FA:
 	LDA.w !RAM_MSPM_Global_CurrentLevelLo
@@ -841,7 +857,7 @@ CODE_808716:
 	STA.w $0336
 	LDA.w #$0001
 	STA.w $033A
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_808722:
 	INC.w !RAM_MSPM_Global_CurrentLevelLo
@@ -880,7 +896,7 @@ CODE_808746:
 	LDA.b #$81
 	STA.w !REGISTER_IRQNMIAndJoypadEnableFlags
 	REP.b #$20
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 DATA_808780:
 	db $00,$01,$00,$00,$02,$00,$00,$00,$03,$00,$00,$00,$03
@@ -1004,7 +1020,7 @@ CODE_80888B:
 	JSR.w CODE_80961E
 CODE_808899:
 	JSR.w CODE_80B843
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_80889F:
 	LDA.w #$0000
@@ -1014,7 +1030,7 @@ CODE_80889F:
 	STA.w $03F8
 	STA.w $0408
 	STZ.w $0202
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7
 
 CODE_8088B7:
 	LDA.w $0214
@@ -1024,13 +1040,13 @@ CODE_8088B7:
 	JSR.w CODE_80B843
 	JSR.w CODE_80CBF7
 	JSR.w CODE_80921D
-	JMP.w CODE_8088D7
+	JMP.w RETURN_8088D7                             ;please, just replace that with RTS!
 
 CODE_8088CE:
 	STZ.w $0206
 	LDA.w #$0078
 	STA.w $0202
-CODE_8088D7:
+RETURN_8088D7:
 	RTS
 
 CODE_8088D8:
@@ -1197,6 +1213,7 @@ CODE_8089E9:
 CODE_808A02:
 	RTS
 
+;exchange between player 1 and 2 variables?
 CODE_808A03:
 	JSR.w CODE_808900
 	LDX.w #$0000
@@ -1869,6 +1886,7 @@ CODE_809003:
 	REP.b #$20
 	RTS
 
+;DMA sprite tiles
 CODE_809037:
 	SEP.b #$20
 	STZ.w !REGISTER_DMAEnable
@@ -2565,6 +2583,8 @@ CODE_8095F0:
 	JSR.w CODE_80AF14
 	RTS
 
+;some kinda color conversion
+;ConvertColorGenesisToSNES_8095F7:
 CODE_8095F7:
 	REP.b #$30
 	STA.w $0020
@@ -2588,7 +2608,7 @@ CODE_8095F7:
 CODE_80961E:
 	LDY.w $036C
 	BEQ.b CODE_809626
-	JMP.w CODE_8097B1
+	JMP.w CODE_8097B1                               ;another one of those JMPs that should be an RTS.
 
 CODE_809626:
 	CMP.w #$0001
@@ -4046,6 +4066,8 @@ CODE_80A42C:
 	BNE.b CODE_80A43A
 	ORA.w #$0001
 	STA.w $028E
+
+;ate power-pellet
 CODE_80A43A:
 	INC.w $0268
 	JSR.w CODE_80BBCF
@@ -4143,7 +4165,7 @@ CODE_80A505:
 CODE_80A511:
 	LDA.w $005B
 	PHA
-	INC.w $0268
+	INC.w $0268                                     ;ate normal dot
 	LDA.w #$0010
 	STA.w $0028
 	STZ.w $002A
@@ -9125,21 +9147,26 @@ CODE_80CDA2:
 CODE_80CDD2:
 	SEP.b #$20
 	STZ.w !REGISTER_DMAEnable
+
 	LDA.b #$7E2000>>16
 	STA.w DMA[$00].SourceBank
+
 	REP.b #$20
 	LDA.w #$7E2000
 	STA.w DMA[$00].SourceLo
-	LDA.w #$0E00
+	LDA.w #$0E00                                    ;112 tiles 4bpp tiles/57 8bpp tiles
 	STA.w DMA[$00].SizeLo
 	LDA.w #$0000
 	STA.w !REGISTER_VRAMAddressLo
 	SEP.b #$20
+
 	LDA.b #!REGISTER_WriteToVRAMPortLo
 	STA.w DMA[$00].Destination
+
 	LDA.b #$01
 	STA.w DMA[$00].Parameters
 	STA.w !REGISTER_DMAEnable
+            
 	REP.b #$20
 	RTS
 
@@ -10829,12 +10856,15 @@ CODE_80E401:
 	LDA.w #DATA_848000
 	LDX.w #DATA_848000>>16
 	JSR.w CODE_80E4D0
+
 	LDA.w #DATA_858A83
 	LDX.w #DATA_858A83>>16
 	JSR.w CODE_80E502
-	LDA.w #DATA_859183
-	LDX.w #DATA_859183>>16
-	JSR.w CODE_80E520
+
+	LDA.w #TitleScreenPalette_859183
+	LDX.w #TitleScreenPalette_859183>>16
+	JSR.w UploadPalette_256Colors_80E520
+
 	SEP.b #$20
 	LDA.b #$03
 	STA.w !REGISTER_BGModeAndTileSizeSetting
@@ -10857,6 +10887,7 @@ CODE_80E444:
 	STA.w $020E
 	RTS
 
+;unused string?
 DATA_80E44B:
 	db "TITLE SCREEN",$00
 
@@ -10864,12 +10895,15 @@ CODE_80E458:
 	LDA.w #DATA_85A91F
 	LDX.w #DATA_85A91F>>16
 	JSR.w CODE_80E4D0
+
 	LDA.w #DATA_85D22A
 	LDX.w #DATA_85D22A>>16
 	JSR.w CODE_80E502
-	LDA.w #DATA_85D92A
-	LDX.w #DATA_85D92A>>16
-	JSR.w CODE_80E520
+
+	LDA.w #WilliamsLogoPalette_85D92A
+	LDX.w #WilliamsLogoPalette_85D92A>>16
+	JSR.w UploadPalette_256Colors_80E520
+
 	SEP.b #$20
 	LDA.b #$03
 	STA.w !REGISTER_BGModeAndTileSizeSetting
@@ -10889,12 +10923,15 @@ CODE_80E494:
 	LDA.w #DATA_868000
 	LDX.w #DATA_868000>>16
 	JSR.w CODE_80E4D0
+
 	LDA.w #DATA_8782CE
 	LDX.w #DATA_8782CE>>16
 	JSR.w CODE_80E502
-	LDA.w #DATA_8789CE
-	LDX.w #DATA_8789CE>>16
-	JSR.w CODE_80E520
+
+	LDA.w #TheEndScreenPalette_8789CE
+	LDX.w #TheEndScreenPalette_8789CE>>16
+	JSR.w UploadPalette_256Colors_80E520
+
 	SEP.b #$20
 	LDA.b #$03
 	STA.w !REGISTER_BGModeAndTileSizeSetting
@@ -10910,6 +10947,7 @@ CODE_80E494:
 	JSR.w CODE_80E54F
 	RTS
 
+;load & decompress 8BPP graphics
 CODE_80E4D0:
 	PHA
 	PHX
@@ -10950,26 +10988,31 @@ CODE_80E50E:
 	JSR.w CODE_80CDA2
 	RTS
 
-CODE_80E520:
+;upload palette (8BPP images)
+;input: A & X - palette pointer
+UploadPalette_256Colors_80E520:
 	STA.w $0010
 	STX.w $0012
 	SEP.b #$20
+
 	LDA.b #$00
 	STA.w !REGISTER_CGRAMAddress
 	STA.w !REGISTER_WriteToCGRAMPort
 	STA.w !REGISTER_WriteToCGRAMPort
+            
 	LDA.b #$00
 	STA.w !REGISTER_CGRAMAddress
+            
 	LDY.w #$0000
-CODE_80E53B:
-	LDA.b [$10],y
+LOOP_80E53B:
+	LDA.b [$10],y                                   ;palette part 1
 	STA.w !REGISTER_WriteToCGRAMPort
 	INY
-	LDA.b [$10],y
+	LDA.b [$10],y                                   ;palette part 2
 	STA.w !REGISTER_WriteToCGRAMPort
 	INY
-	CPY.w #$0200
-	BNE.b CODE_80E53B
+	CPY.w #$0200                                    ;loop until we upload all colors
+	BNE.b LOOP_80E53B
 	REP.b #$20
 	RTS
 
@@ -10998,12 +11041,15 @@ CODE_80E572:
 	LDA.w #DATA_859383
 	LDX.w #DATA_859383>>16
 	JSR.w CODE_80E4D0
+
 	LDA.w #DATA_85A01F
 	LDX.w #DATA_85A01F>>16
 	JSR.w CODE_80E502
-	LDA.w #DATA_85A71F
-	LDX.w #DATA_85A71F>>16
-	JSR.w CODE_80E520
+
+	LDA.w #DigitalEclipseLogoPalette_85A71F
+	LDX.w #DigitalEclipseLogoPalette_85A71F>>16
+	JSR.w UploadPalette_256Colors_80E520
+
 	SEP.b #$20
 	LDA.b #$01
 	STA.w !REGISTER_BGModeAndTileSizeSetting
@@ -13520,6 +13566,8 @@ DATA_828040:
 	dw $0000,$0105,$000B,$000C,$040E,$000A,$020F,$0510
 	dw $0104,$0011,$0012,$0007,$040D,$0012,$000D,$0600
 
+;maze colors I think? they're in Sega Genesis format interestingly enough.
+;converted to SNES format on the fly
 DATA_828080:
 	dw $0C0E,$0A0C,$0C4E,$0C8E,$0CAE,$0EEE,$0A00,$0800
 	dw $0C00,$0E40,$0E80,$0EC0,$002A,$0008,$004C,$006E
@@ -15733,7 +15781,7 @@ DATA_858000:
 DATA_858A83:
 	incbin "Tilemaps/TitleScreen.bin"
 
-DATA_859183:
+TitleScreenPalette_859183:
 	incbin "Palettes/TitleScreen.bin"
 
 DATA_859383:
@@ -15742,7 +15790,7 @@ DATA_859383:
 DATA_85A01F:
 	incbin "Tilemaps/DigitalEclipseLogoScreen.bin"
 
-DATA_85A71F:
+DigitalEclipseLogoPalette_85A71F:
 	incbin "Palettes/DigitalEclipseLogoScreen.bin"
 
 DATA_85A91F:
@@ -15751,7 +15799,7 @@ DATA_85A91F:
 DATA_85D22A:
 	incbin "Tilemaps/WilliamsLogoScreen.bin"
 
-DATA_85D92A:
+WilliamsLogoPalette_85D92A:
 	incbin "Palettes/WilliamsLogoScreen.bin"
 
 	%InsertGarbageData($85DB2A, incbin, DATA_85DB2A.bin)
@@ -15783,7 +15831,7 @@ DATA_878000:
 DATA_8782CE:
 	incbin "Tilemaps/TheEndScreen.bin"
 
-DATA_8789CE:
+TheEndScreenPalette_8789CE:
 	incbin "Palettes/TheEndScreen.bin"
 
 	%InsertGarbageData($878BCE, incbin, DATA_878BCE.bin)

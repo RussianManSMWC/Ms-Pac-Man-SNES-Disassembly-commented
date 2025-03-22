@@ -65,17 +65,17 @@ macro MSPM_GlobalAssemblySettings()
 	!NativeModeCOPVector = $0000
 	!NativeModeBRKVector = $0000
 	!NativeModeAbortVector = $0000
-	!NativeModeNMIVector = CODE_80811F
+	!NativeModeNMIVector = NMI_80811F
 	!NativeModeResetVector = $0000
-	!NativeModeIRQVector = CODE_808118
+	!NativeModeIRQVector = IRQ_808118
 	!UnusedEmulationModeVector1 = $0000
 	!UnusedEmulationModeVector2 = $0000
 	!EmulationModeCOPVector = $0000
 	!EmulationModeBRKVector = $0000
 	!EmulationModeAbortVector = $0000
-	!EmulationModeNMIVector = CODE_80811F
-	!EmulationModeResetVector = CODE_808000
-	!EmulationModeIRQVector = CODE_808118
+	!EmulationModeNMIVector = NMI_80811F
+	!EmulationModeResetVector = RESET_808000
+	!EmulationModeIRQVector = IRQ_808118
 	%LoadExtraRAMFile("SRAM_Map_MSPM.asm")
 endmacro
 
